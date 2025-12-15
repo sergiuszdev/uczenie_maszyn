@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler
 import numpy as np
 from data_load import get_training_data, get_test_data
 
@@ -13,9 +13,8 @@ class NetworkAutoencoder(nn.Module):
         
         self.encoder = nn.Sequential(
             nn.Linear(input_dim, 128),
-            nn.LeakyReLU(0.2),
-            # LeakyReLu (funkcja aktywacji) dobrze łączy się z StandardScaler
-            # StandardScaler produkuje wartości dodatnie (powyżej średniej) i ujemne (poniżej średniej)
+            nn.LeakyReLU(0.2), # funkcja aktywacji
+            # RobustScaler produkuje wartości dodatnie (powyżej mediany) i ujemne (poniżej mediany)
             # LeakyReLu: jeśli liczba dodatnia - zostaw bez zmian, jeśli ujemna - przemnóż przez to co w nawiasie
             
             nn.Linear(128, 64),
@@ -59,7 +58,7 @@ def main():
     X_train_values = X_train_df.values
     X_test_values = X_test_df.values
 
-    scaler = StandardScaler() # skalowanie wokół średniej
+    scaler = RobustScaler() # skalowanie wokół mediany
     X_train_scaled = scaler.fit_transform(X_train_values)
     X_test_scaled = scaler.transform(X_test_values)
 
@@ -105,12 +104,12 @@ def main():
         test_reconstructions = model(test_tensor)
 
     # Skaner progów (Trade-off Analysis)
-    print("\n--- ANALIZA KOMPROMISU (Trade-off) ---")
+    print("\n--- WYNIKI ---")
     print(f"{'Percentyl':<8} | {'Próg':<8} | {'Recall':<8} | {'Precision':<8} | {'F1-Score':<8} | {'FP (Fałszywe alarmy)':<8} | {'TP (Wykryte ataki)':<8}")
     print("-" * 85)
 
-    # Sprawdzamy zakres od 50. do 99. percentyla co 5 punktów
-    possible_percentiles = range(50, 100, 5) 
+    # Sprawdzamy zakres od 60. do 99. percentyla
+    possible_percentiles = [60, 65, 70, 75, 80, 85, 90, 95, 96, 97, 98, 99]
     
     # Obliczenie błędów
     with torch.no_grad():
