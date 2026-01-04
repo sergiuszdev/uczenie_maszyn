@@ -5,7 +5,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import StandardScaler, RobustScaler
 import numpy as np
-from data_load import get_training_data, get_test_data
+from data_load import prepare_datasets
 
 class NetworkAutoencoder(nn.Module):
     def __init__(self, input_dim):
@@ -48,8 +48,7 @@ class NetworkAutoencoder(nn.Module):
 def main():
     print("--- Wczytywanie danych ---")
 
-    X_train_df, _ = get_training_data()
-    X_test_df, y_test_series = get_test_data()
+    (X_train_df, _), (X_test_df, y_test_series) = prepare_datasets()
 
     print(f"Dane treningowe (Norma): {X_train_df.shape}")
     print(f"Dane testowe (Mix): {X_test_df.shape}")

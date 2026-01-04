@@ -2,7 +2,7 @@ import pandas as pd
 import torch
 import numpy as np
 
-from CONFIG import NETFLOW_V9_TRAIN, NETFLOW_V9_TEST
+from CONFIG import NETFLOW_V9_TRAIN
 
 def parse_netflow(csv_path):
     df = pd.read_csv(csv_path)
@@ -44,54 +44,53 @@ def preprocess_netflow(df):
     X = X.astype(float)
     return X, feature_cols
 
-def get_training_data():
-    print("Ładowanie i przygotowywanie zbioru treningowego...")
+def prepare_datasets():
+    """
+    Wczytuje jeden plik treningowy i dzieli go na:
+    1. Czysty zbiór treningowy (500k próbek Normy)
+    2. Zbiór testowy (1M próbek Mixu)
+    """
     df = parse_netflow(NETFLOW_V9_TRAIN)
 
-    # Przygotuj kolumny
     if "ALERT" in df.columns:
         df["ALERT"] = df["ALERT"].fillna("None")
     else:
-        df["ALERT"] = "None"
-        
-    if "ANOMALY" in df.columns:
-        df["ANOMALY"] = df["ANOMALY"].fillna(0) 
+        raise ValueError("Brak kolumny ALERT w pliku treningowym!")
+
+    print(f"Rozmiar całkowity: {len(df)}")
+
+    # Wybór danych do TRENINGU (Tylko Norma)
+    df_normal = df[df["ALERT"] == "None"]
+    
+    train_size = 500000
+    if len(df_normal) >= train_size:
+        print(f"Losowanie {train_size} próbek normy do treningu...")
+        df_train = df_normal.sample(n=train_size, random_state=42)
     else:
-        df["ANOMALY"] = 0
+        print(f"UWAGA: Dostępne tylko {len(df_normal)} próbek normy.")
+        df_train = df_normal.copy()
 
-    # Definicja ruchu normalnego:
-    # Musi mieć ALERT == "None" oraz ANOMALY == 0
-    clean_mask = (df["ALERT"] == "None") & (df["ANOMALY"] == 0)
+    #Wybór danych do TESTU (Mix: Ataki + pozostała Norma)
+    # Usuwamy z głównego df te wiersze, które wzięliśmy do treningu
+    train_indices = df_train.index
+    df_remaining = df.drop(train_indices)
     
-    df_normal_traffic = df[clean_mask]
+    test_size = 1000000
+    if len(df_remaining) >= test_size:
+        print(f"Losowanie {test_size} próbek do testu z pozostałych danych...")
+        df_test = df_remaining.sample(n=test_size, random_state=42)
+    else:
+        print(f"Do testu pozostało {len(df_remaining)} próbek.")
+        df_test = df_remaining.copy()
+
+    print("Przetwarzanie zbioru treningowego...")
+    X_train, _ = preprocess_netflow(df_train)
+    y_train = torch.zeros(X_train.shape[0])
+
+    print("Przetwarzanie zbioru testowego...")
+    y_test_raw = df_test["ALERT"].apply(lambda x: 0 if x == "None" else 1)
     
-    print(f"Oryginalny rozmiar: {len(df)}. Pozostało: {len(df_normal_traffic)}")
+    X_test, _ = preprocess_netflow(df_test)
+    y_test = y_test_raw
 
-    # Sampling
-    sample_size = 500000
-    if len(df_normal_traffic) > sample_size:
-        print(f"Losowanie {sample_size} próbek...")
-        df_normal_traffic = df_normal_traffic.sample(n=sample_size, random_state=42)
-
-    X, feature_cols = preprocess_netflow(df_normal_traffic)
-    y = torch.zeros(X.shape[0])
-    return X, y
-
-def get_test_data():
-    print("Ładowanie zbioru testowego...")
-    df = parse_netflow(NETFLOW_V9_TEST)
-
-    # Usuwamy wiersze, gdzie ANOMALY jest puste
-    initial_len = len(df)
-    df = df.dropna(subset=["ANOMALY"])
-    dropped_len = initial_len - len(df)
-    if dropped_len > 0:
-        print(f"Usunięto {dropped_len} wierszy z testu z powodu braku etykiety ANOMALY")
-
-    # Konwersja ANOMALY na 0 i 1
-    # 0 lub "None" to OK, wszystko inne to atak
-    df["ANOMALY"] = df["ANOMALY"].apply(lambda x: 0 if str(x) in ["None", "0", "0.0"] else 1)
-    y = df["ANOMALY"]
-
-    X, _ = preprocess_netflow(df)
-    return X, y
+    return (X_train, y_train), (X_test, y_test)
