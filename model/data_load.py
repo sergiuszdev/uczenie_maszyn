@@ -128,72 +128,86 @@ def extract_features():
     features_path = D1_TRAINSET_FEATURES_LABELS
     arr = []
     with open(features_path, "r") as f:
-        skip = f.readline()
-        for line in f.readlines():
-            feature = line.split(":")[0]
-            arr.append(feature)
-    # brakuje kolumny o ataku
-    arr.append("anomaly")
+        lines = f.readlines()
+        for line in lines:
+            if ":" in line:
+                feature = line.split(":")[0]
+                arr.append(feature)
+    
+    if "anomaly" not in arr:
+        arr.append("anomaly")
     return arr
-
 
 def preprocess_dataset1() -> pd.DataFrame:
     features = extract_features()
     d1_path = D1_TRAINSET
 
-    """
-    ['duration', 'protocol_type', 'service',
-    'flag', 'src_bytes', 'dst_bytes', 'land',
-    'wrong_fragment', 'urgent', 'hot',
-    'num_failed_logins', 'logged_in', 'num_compromised',
-    'root_shell', 'su_attempted', 'num_root',
-    'num_file_creations', 'num_shells', 'num_access_files',
-    'num_outbound_cmds', 'is_host_login', 'is_guest_login',
-    'count', 'srv_count', 'serror_rate', 'srv_serror_rate',
-    'rerror_rate', 'srv_rerror_rate', 'same_srv_rate',
-    'diff_srv_rate', 'srv_diff_host_rate', 'dst_host_count',
-    'dst_host_srv_count', 'dst_host_same_srv_rate',
-    'dst_host_diff_srv_rate', 'dst_host_same_src_port_rate',
-    'dst_host_srv_diff_host_rate', 'dst_host_serror_rate',
-    'dst_host_srv_serror_rate', 'dst_host_rerror_rate',
-    'dst_host_srv_rerror_rate', 'anomaly']
-    """
-
-    df = pd.read_csv(d1_path, header=None, names=features)
-    df["anomaly"] = df["anomaly"].apply(lambda x: 0 if x == "normal." else 1)
+    try:
+        df = pd.read_csv(d1_path, header=None, names=features)
+    except Exception as e:
+        print(f"Błąd wczytywania CSV: {e}")
+        df = pd.read_csv(d1_path, header=None)
+    
+    # Usuwanie duplikatów
+    initial_len = len(df)
+    df = df.drop_duplicates()
+    print(f"Usunięto duplikaty: {initial_len} -> {len(df)}")
+    
+    # Konwersja etykiet: 'normal.' -> 0, reszta -> 1
+    df["anomaly"] = df["anomaly"].apply(lambda x: 0 if str(x).strip() == "normal." else 1)
+    
     return df
 
-
-def load_dataset1() -> Tuple[
-    Tuple[pd.DataFrame, pd.Series],
-    Tuple[pd.DataFrame, pd.Series],
-]:
+def load_dataset1() -> Tuple[Tuple[pd.DataFrame, pd.Series], Tuple[pd.DataFrame, pd.Series]]:
     df = preprocess_dataset1()
     X = df.drop(columns=["anomaly"])
     y = df["anomaly"]
 
-    for col in ["protocol_type", "service", "flag"]:
-        freq = X[col].value_counts() / len(X)
-        X[col] = X[col].map(freq)
+    cat_cols = ["protocol_type", "service", "flag"]
+    for col in cat_cols:
+        if col in X.columns:
+            freq = X[col].value_counts() / len(X)
+            X[col] = X[col].map(freq).astype(float)
 
     drop_cols = [
         "num_outbound_cmds",
-        "is_guest_login",
         "is_host_login",
-        "root_shell",
-        "su_attempted",
     ]
+
     X = X.drop(columns=[c for c in drop_cols if c in X.columns])
 
-    numeric_cols = ["src_bytes", "dst_bytes", "count", "srv_count", "num_failed_logins"]
-    for col in numeric_cols:
+    log_cols = [
+        "duration",
+        "src_bytes", "dst_bytes", 
+        "wrong_fragment", "urgent",
+        "hot", "num_failed_logins", 
+        "num_compromised",
+        "num_root",
+        "num_file_creations", 
+        "num_shells", 
+        "num_access_files",
+        "count", "srv_count", 
+        "dst_host_count", "dst_host_srv_count"
+    ]
+    
+    for col in log_cols:
         if col in X.columns:
-            X[col] = np.log1p(X[col])
+            X[col] = np.log1p(X[col].clip(lower=0))
 
     X = X.fillna(0).astype(float)
 
-    X_train, X_test, y_train, y_test = train_test_split(
+    # Podział danych
+    X_train_raw, X_test, y_train_raw, y_test = train_test_split(
         X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE_SEED, stratify=y
     )
 
+    # Filtracja zbioru treningowego -> tylko norma
+    train_mask = (y_train_raw == 0)
+    X_train = X_train_raw[train_mask]
+    y_train = y_train_raw[train_mask]
+
+    print(f"Dane wczytane (KDD/NSL-KDD).")
+    print(f"Trening (Tylko Norma): {X_train.shape}")
+    print(f"Test (Mix): {X_test.shape}")
+    
     return (X_train, y_train), (X_test, y_test)
