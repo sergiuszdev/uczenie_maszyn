@@ -6,7 +6,7 @@ import torch
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
-from CONFIG import D1_TRAINSET, D1_TRAINSET_FEATURES_LABELS, NETFLOW_V9_TRAIN
+from CONFIG import D1_TRAINSET, D1_TRAINSET_FEATURES_LABELS, NETFLOW_V9_TRAIN, DATASET3
 
 # todo:do configu
 # 70% do nauki, 30% do testów
@@ -211,3 +211,53 @@ def load_dataset1() -> Tuple[Tuple[pd.DataFrame, pd.Series], Tuple[pd.DataFrame,
     print(f"Test (Mix): {X_test.shape}")
     
     return (X_train, y_train), (X_test, y_test)
+
+
+
+# ------------------
+# dataset 3
+
+
+def preprocess_dataset3() -> pd.DataFrame:
+    DATASET3_PATH = DATASET3
+
+    df = pd.read_csv(DATASET3_PATH, header=None)
+    # ostatnia kolumna = etykieta
+    n_cols = df.shape[1]
+    feature_cols = [f"f{i}" for i in range(n_cols - 1)]
+    df.columns = feature_cols + ["anomaly"]
+
+    df["anomaly"] = df["anomaly"].astype(int)
+
+    df = df.drop_duplicates()
+    return df
+
+
+def load_dataset3() -> Tuple[
+    Tuple[pd.DataFrame, pd.Series],
+    Tuple[pd.DataFrame, pd.Series],
+]:
+    df = preprocess_dataset3()
+
+    X = df.drop(columns=["anomaly"])
+    y = df["anomaly"]
+
+    log_cols = X.columns
+    for col in log_cols:
+        X[col] = np.log1p(X[col].clip(lower=0))
+
+    X = X.fillna(0).astype(float)
+
+    X_train_raw, X_test, y_train_raw, y_test = train_test_split(
+        X,
+        y,
+        test_size=TEST_SIZE,
+        random_state=RANDOM_STATE_SEED,
+        stratify=y,
+    )
+
+    mask = y_train_raw == 0
+    X_train = X_train_raw[mask]
+    y_train = y_train_raw[mask]
+    return (X_train, y_train), (X_test, y_test)
+

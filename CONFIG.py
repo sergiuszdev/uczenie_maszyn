@@ -11,3 +11,5 @@ KDD99_DIR = __BASE_DIR / "learning_data" / "dataset1_kdd99"
 # The correct data is now in kddcup.data.gz and kddcup-data_10_percent.gz.
 D1_TRAINSET = KDD99_DIR / "kddcup.data"
 D1_TRAINSET_FEATURES_LABELS = KDD99_DIR / "kddcup.names"
+
+DATASET3 = __BASE_DIR / "learning_data" / "dataset3" / "cores_iot.csv"
