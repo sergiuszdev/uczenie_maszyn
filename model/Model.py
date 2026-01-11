@@ -5,7 +5,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import StandardScaler, RobustScaler
 import numpy as np
-from data_load import prepare_datasets, load_dataset1
+from collections import defaultdict
+from data_load import prepare_datasets, load_dataset1, load_dataset3
 
 class NetworkAutoencoder(nn.Module):
     def __init__(self, input_dim):
@@ -49,7 +50,7 @@ class NetworkAutoencoder(nn.Module):
 def main():
     print("--- Wczytywanie danych ---")
 
-    (X_train_df, _), (X_test_df, y_test_series) = load_dataset1()
+    (X_train_df, _), (X_test_df, y_test_series) = load_dataset3()
 
     print(f"Dane treningowe (Norma): {X_train_df.shape}")
     print(f"Dane testowe (Mix): {X_test_df.shape}")
@@ -93,58 +94,102 @@ def main():
 
 
     # Ustalanie progu (Threshold) na zbiorze treningowym
+    print("--- Testowanie ---")
     model.eval() # wyłącza droput i inne mechanizmy losowe
+    
     with torch.no_grad(): # nie trzeba tego pamiętać do nauki gradientów
         train_reconstructions = model(train_tensor) # sprawdzenie jak wygląda norma - stworzenie "mapy normalności"
-
-
-    # Ewaluacja na zbiorze testowym
-    print("\n--- Testowanie ---")
-    with torch.no_grad():
+        
+        # Ewaluacja na zbiorze testowym (Obliczamy rekonstrukcje raz dla całości)
         test_reconstructions = model(test_tensor)
 
-    # Skaner progów (Trade-off Analysis)
-    print("\n--- WYNIKI ---")
-    print(f"{'Percentyl':<8} | {'Próg':<8} | {'Recall':<8} | {'Precision':<8} | {'F1-Score':<8} | {'FP (Fałszywe alarmy)':<8} | {'TP (Wykryte ataki)':<8}")
-    print("-" * 85)
-
+    print("--- WYNIKI (Średnia z 10 losowych podzbiorów testowych) ---")
+    
     # Sprawdzamy zakres od 60. do 99. percentyla
     possible_percentiles = [60, 65, 70, 75, 80, 85, 90, 95, 96, 97, 98, 99]
     
-    # Obliczenie błędów
+    # Obliczenie błędów dla wszystkich danych (bazowe)
     with torch.no_grad():
         # Dla każdego wiersza (pakietu) bierze jego cechy, sumuje ich błędy i wyciąga średnią
         train_errors = torch.mean((train_tensor - train_reconstructions) ** 2, dim=1).numpy()
-        test_errors = torch.mean((test_tensor - test_reconstructions) ** 2, dim=1).numpy()
-        y_true = y_test_series.values.astype(int)
+        test_errors_full = torch.mean((test_tensor - test_reconstructions) ** 2, dim=1).numpy()
+        y_true_full = y_test_series.values.astype(int)
 
-    best_f1 = 0
+    # Wyliczamy progi raz, bo są stałe dla wytrenowanego modelu
+    thresholds_map = {p: np.percentile(train_errors, p) for p in possible_percentiles}
+
+    # Przygotowanie do pętli testowej
+    NUM_RUNS = 10
+    SAMPLE_FRACTION = 0.5 # Bierzemy 50% danych testowych w każdym przebiegu
+    results_accumulator = defaultdict(lambda: defaultdict(list))
+    
+    total_samples = len(test_errors_full)
+    subset_size = int(total_samples * SAMPLE_FRACTION)
+    
+    print(f"Przeprowadzam {NUM_RUNS} testów. W każdym losuję {subset_size} próbek z puli testowej...")
+
+    # 3. Pętla testowa
+    for run in range(NUM_RUNS):
+        # Losujemy indeksy
+        indices = np.random.choice(total_samples, subset_size, replace=False)
+        
+        # Wycinamy podzbiór błędów i etykiet
+        test_errors_subset = test_errors_full[indices]
+        y_true_subset = y_true_full[indices]
+        
+        # Sprawdzamy każdy percentyl na tym podzbiorze
+        for p in possible_percentiles:
+            threshold = thresholds_map[p]
+            
+            # Zrób predykcję na podzbiorze
+            y_pred_temp = (test_errors_subset > threshold).astype(int)
+            
+            # Policz statystyki
+            tp = ((y_pred_temp == 1) & (y_true_subset == 1)).sum()
+            fp = ((y_pred_temp == 1) & (y_true_subset == 0)).sum()
+            fn = ((y_pred_temp == 0) & (y_true_subset == 1)).sum()
+            
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            f1 = (2 * tp) / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 0
+            
+            # Zbierz wyniki
+            results_accumulator[p]['recall'].append(recall)
+            results_accumulator[p]['precision'].append(precision)
+            results_accumulator[p]['f1'].append(f1)
+            results_accumulator[p]['fp'].append(fp)
+            results_accumulator[p]['tp'].append(tp)
+        
+        print(".", end="", flush=True)
+
+    print("\n\n" + "-" * 105)
+    print(f"{'Percentyl':<8} | {'Próg':<8} | {'Avg Recall':<12} | {'Avg Precision':<15} | {'Avg F1 (+/- std)':<18} | {'Avg FP':<10}")
+    print("-" * 105)
+
+    best_f1_avg = 0
     best_p = 0
 
+    # Wyświetlanie uśrednionych wyników
     for p in possible_percentiles:
-        # Ustal próg na podstawie treningu (normy)
-        threshold_temp = np.percentile(train_errors, p)
+        stats = results_accumulator[p]
+        threshold = thresholds_map[p]
         
-        # Zrób predykcję na teście
-        y_pred_temp = (test_errors > threshold_temp).astype(int)
+        avg_recall = np.mean(stats['recall'])
+        avg_precision = np.mean(stats['precision'])
+        avg_f1 = np.mean(stats['f1'])
+        std_f1 = np.std(stats['f1'])
+        avg_fp = np.mean(stats['fp'])
         
-        # Policz statystyki
-        tp = ((y_pred_temp == 1) & (y_true == 1)).sum()
-        fp = ((y_pred_temp == 1) & (y_true == 0)).sum()
-        fn = ((y_pred_temp == 0) & (y_true == 1)).sum()
+        f1_str = f"{avg_f1:.4f} (+/-{std_f1:.3f})"
         
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-        f1 = (2 * tp) / (2 * tp + fp + fn) if 2 * tp + fp + fn > 0 else 0
-        
-        print(f"{p:<10} | {threshold_temp:.6f} | {recall*100:6.2f}% | {precision*100:6.2f}% | {f1:.4f} | {fp} | {tp}")
+        print(f"{p:<10} | {threshold:.6f} | {avg_recall*100:6.2f}%      | {avg_precision*100:6.2f}%         | {f1_str:<18} | {avg_fp:<10.1f}")
 
-        if f1 > best_f1:
-            best_f1 = f1
+        if avg_f1 > best_f1_avg:
+            best_f1_avg = avg_f1
             best_p = p
 
-    print("-" * 85)
-    print(f"Matematycznie najlepszy percentyl (wg F1-Score): {best_p}")
+    print("-" * 105)
+    print(f"Matematycznie najlepszy percentyl (wg średniego F1-Score): {best_p}")
 
 if __name__ == "__main__":
     main()
