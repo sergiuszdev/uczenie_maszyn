@@ -7,7 +7,7 @@ from sklearn.preprocessing import RobustScaler
 import numpy as np
 from collections import defaultdict
 from data_load import prepare_datasets, load_dataset1, load_dataset3
-from graph_draw import plot_tradeoff_analysis, plot_roc_curve, plot_error_histogram
+from graph_draw import plot_tradeoff_analysis, plot_roc_curve, plot_error_histogram, plot_feature_separability, plot_preprocessing_effect
 
 class NetworkAutoencoder(nn.Module):
     def __init__(self, input_dim):
@@ -89,6 +89,12 @@ def main():
     print("--- Wczytywanie danych ---")
 
     (X_train_df, _), (X_test_df, y_test_series) = load_dataset3()
+
+    # Wykres preprocessingu
+    plot_preprocessing_effect(X_train_df, feature_name='IN_BYTES')
+
+    # Wykres separowalności
+    plot_feature_separability(X_test_df, y_test_series.values, feature_name='IN_PKTS', apply_log=True)
 
     print(f"Dane treningowe (Norma): {X_train_df.shape}")
     print(f"Dane testowe (Mix): {X_test_df.shape}")
