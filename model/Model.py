@@ -3,10 +3,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
-from sklearn.preprocessing import StandardScaler, RobustScaler
+from sklearn.preprocessing import RobustScaler
 import numpy as np
 from collections import defaultdict
 from data_load import prepare_datasets, load_dataset1, load_dataset3
+from graph_draw import plot_tradeoff_analysis, plot_roc_curve, plot_error_histogram
 
 class NetworkAutoencoder(nn.Module):
     def __init__(self, input_dim):
@@ -46,6 +47,43 @@ class NetworkAutoencoder(nn.Module):
         decoded = self.decoder(encoded)
         return decoded
 
+
+import pandas as pd
+import numpy as np
+
+def save_results_to_csv(results_accumulator, thresholds_map, filename="results/wyniki_analizy.csv"):
+    print(f"\nZapisywanie wyników do pliku {filename}...")
+    
+    data_rows = []
+    
+    sorted_percentiles = sorted(results_accumulator.keys())
+
+    for p in sorted_percentiles:
+        stats = results_accumulator[p]
+        threshold = thresholds_map[p]
+        
+        avg_recall = np.mean(stats['recall'])
+        avg_precision = np.mean(stats['precision'])
+        avg_f1 = np.mean(stats['f1'])
+        std_f1 = np.std(stats['f1'])
+        avg_fp = np.mean(stats['fp'])
+        avg_tp = np.mean(stats['tp'])
+
+        row = {
+            "Percentyl": p,
+            "Próg (Threshold)": threshold,
+            "Avg Recall": avg_recall,
+            "Avg Precision": avg_precision,
+            "Avg F1": avg_f1,
+            "F1 Std (+/-)": std_f1,
+            "Avg FP": avg_fp,
+            "Avg TP": avg_tp
+        }
+        data_rows.append(row)
+
+    df = pd.DataFrame(data_rows)
+    
+    df.to_csv(filename, index=False, float_format='%.6f')
 
 def main():
     print("--- Wczytywanie danych ---")
@@ -190,6 +228,19 @@ def main():
 
     print("-" * 105)
     print(f"Matematycznie najlepszy percentyl (wg średniego F1-Score): {best_p}")
+
+    # Wykres recall vs precision
+    plot_tradeoff_analysis(results_accumulator, possible_percentiles)
+
+    # Wykres ROC
+    plot_roc_curve(y_true_full, test_errors_full)
+
+    # Histogram
+    best_threshold = thresholds_map[best_p]
+    plot_error_histogram(y_true_full, test_errors_full, threshold=best_threshold)
+
+    # Zapis wyników do pliku
+    save_results_to_csv(results_accumulator, thresholds_map)
 
 if __name__ == "__main__":
     main()
