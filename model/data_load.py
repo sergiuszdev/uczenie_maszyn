@@ -1,3 +1,4 @@
+import random
 from typing import Tuple
 
 import numpy as np
@@ -5,13 +6,16 @@ import pandas as pd
 import torch
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from sympy import Integer
 
 from CONFIG import D1_TRAINSET, D1_TRAINSET_FEATURES_LABELS, NETFLOW_V9_TRAIN, DATASET3
 
 # todo:do configu
 # 70% do nauki, 30% do testów
 TEST_SIZE = 0.3
-RANDOM_STATE_SEED = 66
+
+def get_random_seed():
+    return random.randint(1, 10000)
 
 
 def parse_netflow(csv_path):
@@ -198,7 +202,7 @@ def load_dataset1() -> Tuple[Tuple[pd.DataFrame, pd.Series], Tuple[pd.DataFrame,
 
     # Podział danych
     X_train_raw, X_test, y_train_raw, y_test = train_test_split(
-        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE_SEED, stratify=y
+        X, y, test_size=TEST_SIZE, random_state=get_random_seed(), stratify=y
     )
 
     # Filtracja zbioru treningowego -> tylko norma
@@ -252,7 +256,7 @@ def load_dataset3() -> Tuple[
         X,
         y,
         test_size=TEST_SIZE,
-        random_state=RANDOM_STATE_SEED,
+        random_state=get_random_seed(),
         stratify=y,
     )
 
