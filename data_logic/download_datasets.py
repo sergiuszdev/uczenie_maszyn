@@ -31,6 +31,7 @@ def __extract_gz(file_path: Path):
 __BASE_DIR = Path(__file__).parent
 DATASETS_DIR = __BASE_DIR / "learning_data"
 
+
 def download_data():
     # dataset1
     cached_dataset1 = kagglehub.dataset_download("galaxyh/kdd-cup-1999-data")

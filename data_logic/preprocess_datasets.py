@@ -5,14 +5,13 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sympy import Integer
 
 from CONFIG import D1_TRAINSET, D1_TRAINSET_FEATURES_LABELS, NETFLOW_V9_TRAIN, DATASET3
 
 # todo:do configu
 # 70% do nauki, 30% do testów
 TEST_SIZE = 0.3
+
 
 def get_random_seed():
     return random.randint(1, 10000)
@@ -137,10 +136,11 @@ def extract_features():
             if ":" in line:
                 feature = line.split(":")[0]
                 arr.append(feature)
-    
+
     if "anomaly" not in arr:
         arr.append("anomaly")
     return arr
+
 
 def preprocess_dataset1() -> pd.DataFrame:
     features = extract_features()
@@ -151,18 +151,23 @@ def preprocess_dataset1() -> pd.DataFrame:
     except Exception as e:
         print(f"Błąd wczytywania CSV: {e}")
         df = pd.read_csv(d1_path, header=None)
-    
+
     # Usuwanie duplikatów
     initial_len = len(df)
     df = df.drop_duplicates()
     print(f"Usunięto duplikaty: {initial_len} -> {len(df)}")
-    
+
     # Konwersja etykiet: 'normal.' -> 0, reszta -> 1
-    df["anomaly"] = df["anomaly"].apply(lambda x: 0 if str(x).strip() == "normal." else 1)
-    
+    df["anomaly"] = df["anomaly"].apply(
+        lambda x: 0 if str(x).strip() == "normal." else 1
+    )
+
     return df
 
-def load_dataset1() -> Tuple[Tuple[pd.DataFrame, pd.Series], Tuple[pd.DataFrame, pd.Series]]:
+
+def load_dataset1() -> Tuple[
+    Tuple[pd.DataFrame, pd.Series], Tuple[pd.DataFrame, pd.Series]
+]:
     df = preprocess_dataset1()
     X = df.drop(columns=["anomaly"])
     y = df["anomaly"]
@@ -182,18 +187,23 @@ def load_dataset1() -> Tuple[Tuple[pd.DataFrame, pd.Series], Tuple[pd.DataFrame,
 
     log_cols = [
         "duration",
-        "src_bytes", "dst_bytes", 
-        "wrong_fragment", "urgent",
-        "hot", "num_failed_logins", 
+        "src_bytes",
+        "dst_bytes",
+        "wrong_fragment",
+        "urgent",
+        "hot",
+        "num_failed_logins",
         "num_compromised",
         "num_root",
-        "num_file_creations", 
-        "num_shells", 
+        "num_file_creations",
+        "num_shells",
         "num_access_files",
-        "count", "srv_count", 
-        "dst_host_count", "dst_host_srv_count"
+        "count",
+        "srv_count",
+        "dst_host_count",
+        "dst_host_srv_count",
     ]
-    
+
     for col in log_cols:
         if col in X.columns:
             X[col] = np.log1p(X[col].clip(lower=0))
@@ -206,16 +216,15 @@ def load_dataset1() -> Tuple[Tuple[pd.DataFrame, pd.Series], Tuple[pd.DataFrame,
     )
 
     # Filtracja zbioru treningowego -> tylko norma
-    train_mask = (y_train_raw == 0)
+    train_mask = y_train_raw == 0
     X_train = X_train_raw[train_mask]
     y_train = y_train_raw[train_mask]
 
-    print(f"Dane wczytane (KDD/NSL-KDD).")
+    print("Dane wczytane (KDD/NSL-KDD).")
     print(f"Trening (Tylko Norma): {X_train.shape}")
     print(f"Test (Mix): {X_test.shape}")
-    
-    return (X_train, y_train), (X_test, y_test)
 
+    return (X_train, y_train), (X_test, y_test)
 
 
 # ------------------
@@ -264,4 +273,3 @@ def load_dataset3() -> Tuple[
     X_train = X_train_raw[mask]
     y_train = y_train_raw[mask]
     return (X_train, y_train), (X_test, y_test)
-
