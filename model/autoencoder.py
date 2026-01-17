@@ -1,13 +1,11 @@
-import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import RobustScaler
-import numpy as np
 from collections import defaultdict
-from data_load import prepare_datasets, load_dataset1, load_dataset3
-from graph_draw import plot_tradeoff_analysis, plot_roc_curve, plot_error_histogram, plot_feature_separability, plot_preprocessing_effect
+from datasets.data_load import load_dataset2, load_dataset1, load_dataset3
+from datasets.graph_draw import plot_tradeoff_analysis, plot_roc_curve, plot_error_histogram, plot_feature_separability, plot_preprocessing_effect
 
 class NetworkAutoencoder(nn.Module):
     def __init__(self, input_dim):
@@ -85,10 +83,10 @@ def save_results_to_csv(results_accumulator, thresholds_map, filename="results/w
     
     df.to_csv(filename, index=False, float_format='%.6f')
 
-def main():
+def make_tests(load_data: ()):
     print("--- Wczytywanie danych ---")
 
-    (X_train_df, _), (X_test_df, y_test_series) = load_dataset3()
+    (X_train_df, _), (X_test_df, y_test_series) = load_data()
 
     # Wykres preprocessingu
     plot_preprocessing_effect(X_train_df, feature_name='IN_BYTES')
@@ -249,4 +247,6 @@ def main():
     save_results_to_csv(results_accumulator, thresholds_map)
 
 if __name__ == "__main__":
-    main()
+    make_tests(load_dataset1)
+    make_tests(load_dataset2)
+    make_tests(load_dataset3)

@@ -74,7 +74,7 @@ def preprocess_netflow(df):
     return X, feature_cols
 
 
-def prepare_datasets():
+def load_dataset2():
     """
     Wczytuje jeden plik treningowy i dzieli go na:
     1. Czysty zbiór treningowy (500k próbek Normy)
