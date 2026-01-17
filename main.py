@@ -1,4 +1,4 @@
-from datasets.download_datasets import download_data, __BASE_DIR
+from data_logic.download_datasets import download_data, __BASE_DIR
 
 
 def test_handle():
