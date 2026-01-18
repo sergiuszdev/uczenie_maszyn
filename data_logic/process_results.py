@@ -14,12 +14,18 @@ def save_results_to_csv(results_accumulator, thresholds_map, file_tag=""):
     print(f"\nZapisywanie wyników do pliku {filename}...")
 
     data_rows = []
-
+    
+    # Sortujemy klucze
     sorted_percentiles = sorted(results_accumulator.keys())
 
     for p in sorted_percentiles:
         stats = results_accumulator[p]
-        threshold = thresholds_map[p]
+        
+        if not stats["recall"]:
+            print(f"Brak danych dla percentyla {p}")
+            continue
+
+        threshold = thresholds_map.get(p, 0.0)
 
         avg_recall = np.mean(stats["recall"])
         avg_precision = np.mean(stats["precision"])
@@ -40,9 +46,13 @@ def save_results_to_csv(results_accumulator, thresholds_map, file_tag=""):
         }
         data_rows.append(row)
 
-    df = pd.DataFrame(data_rows)
+    if not data_rows:
+        print("Błąd: Brak danych do zapisania w pliku CSV!")
+        return
 
+    df = pd.DataFrame(data_rows)
     df.to_csv(filename, index=False, float_format="%.6f")
+    print("Zapis zakończony sukcesem.")
 
 
 def plot_tradeoff_analysis(results_accumulator, percentiles, file_tag=""):

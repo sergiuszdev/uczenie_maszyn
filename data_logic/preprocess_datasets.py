@@ -125,6 +125,38 @@ def load_dataset2():
     return (X_train, y_train), (X_test, y_test)
 
 
+def load_dataset2_full() -> Tuple[pd.DataFrame, pd.Series]:
+    print(f"Wczytywanie pliku: {NETFLOW_V9_TRAIN} ...")
+    df = parse_netflow(NETFLOW_V9_TRAIN)
+
+    # Obsługa kolumny celu (ALERT)
+    if "ALERT" in df.columns:
+        df["ALERT"] = df["ALERT"].fillna("None")
+        # Konwersja: None -> 0 (Norma), reszta -> 1 (Atak)
+        y = df["ALERT"].apply(lambda x: 0 if x == "None" else 1)
+    else:
+        raise ValueError("Brak kolumny ALERT w pliku treningowym!")
+
+    print(f"Rozmiar całkowity: {len(df)}")
+    print(f"Liczba ataków: {y.sum()} ({y.mean()*100:.2f}%)")
+
+    MAX_SAMPLES = 1000000
+    if len(df) > MAX_SAMPLES:
+        print(f"Zbiór jest duży. Losowanie próbki {MAX_SAMPLES} wierszy do Walidacji Krzyżowej...")
+        # Pobieramy losowe indeksy
+        indices = np.random.choice(len(df), MAX_SAMPLES, replace=False)
+        df = df.iloc[indices]
+        y = y.iloc[indices]
+    
+    X, _ = preprocess_netflow(df)
+    
+    X = X.reset_index(drop=True)
+    y = y.reset_index(drop=True)
+
+    print(f"Dane gotowe. Kształt X: {X.shape}")
+    return X, y
+
+
 # ------------------
 # dataset 1
 def extract_features():
@@ -227,6 +259,56 @@ def load_dataset1() -> Tuple[
     return (X_train, y_train), (X_test, y_test)
 
 
+def load_dataset1_full() -> Tuple[pd.DataFrame, pd.Series]:
+
+    df = preprocess_dataset1()
+    
+    X = df.drop(columns=["anomaly"])
+    y = df["anomaly"]
+
+    cat_cols = ["protocol_type", "service", "flag"]
+    for col in cat_cols:
+        if col in X.columns:
+            freq = X[col].value_counts() / len(X)
+            X[col] = X[col].map(freq).astype(float)
+
+    drop_cols = [
+        "num_outbound_cmds",
+        "is_host_login",
+    ]
+    X = X.drop(columns=[c for c in drop_cols if c in X.columns])
+
+    log_cols = [
+        "duration",
+        "src_bytes",
+        "dst_bytes",
+        "wrong_fragment",
+        "urgent",
+        "hot",
+        "num_failed_logins",
+        "num_compromised",
+        "num_root",
+        "num_file_creations",
+        "num_shells",
+        "num_access_files",
+        "count",
+        "srv_count",
+        "dst_host_count",
+        "dst_host_srv_count",
+    ]
+
+    for col in log_cols:
+        if col in X.columns:
+            X[col] = np.log1p(X[col].clip(lower=0))
+
+    X = X.fillna(0).astype(float)
+
+    print("Dane wczytane (KDD/NSL-KDD - FULL).")
+    print(f"Wymiary całkowite: {X.shape}")
+    print(f"Liczba ataków: {y.sum()} ({y.mean()*100:.2f}%)")
+
+    return X, y
+
 # ------------------
 # dataset 3
 
@@ -273,3 +355,23 @@ def load_dataset3() -> Tuple[
     X_train = X_train_raw[mask]
     y_train = y_train_raw[mask]
     return (X_train, y_train), (X_test, y_test)
+
+
+#----------------------------------
+# DO WALIDACJI KRZYŻOWEJ
+#----------------------------------
+
+def load_dataset3_full() -> Tuple[pd.DataFrame, pd.Series]:
+    df = preprocess_dataset3()
+
+    X = df.drop(columns=["anomaly"])
+    y = df["anomaly"]
+
+    log_cols = X.columns
+    for col in log_cols:
+        X[col] = np.log1p(X[col].clip(lower=0))
+
+    X = X.fillna(0).astype(float)
+    
+    print(f"Dane wczytane (CORES-IoT). Wymiary całkowite: {X.shape}")
+    return X, y

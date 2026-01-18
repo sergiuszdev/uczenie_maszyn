@@ -3,8 +3,17 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import RobustScaler
+from sklearn.model_selection import StratifiedKFold
 from collections import defaultdict
-from data_logic.preprocess_datasets import load_dataset2, load_dataset1, load_dataset3
+from data_logic.preprocess_datasets import (
+    load_dataset2, 
+    load_dataset1, 
+    load_dataset3, 
+    load_dataset3_full, 
+    load_dataset1_full,
+    load_dataset2_full,
+    get_random_seed
+)
 from data_logic.process_results import (
     plot_tradeoff_analysis,
     plot_roc_curve,
@@ -49,7 +58,7 @@ class NetworkAutoencoder(nn.Module):
         return decoded
 
 
-def make_tests(load_data: (), tag="", save_results=False):
+def make_tests(load_data, tag="", save_results=False):
     print("--- Wczytywanie danych ---")
 
     (X_train_df, _), (X_test_df, y_test_series) = load_data()
@@ -238,7 +247,155 @@ def make_tests(load_data: (), tag="", save_results=False):
         save_results_to_csv(results_accumulator, thresholds_map, file_tag=tag)
 
 
+def run_cross_validation(data_loader_func, tag="cv_result", n_splits=5):
+
+    X_all, y_all = data_loader_func()
+
+    # StratifiedKFold zapewnia by w każdym kawałku testowym było taki sam % ataków
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=get_random_seed())
+
+    results_accumulator = defaultdict(lambda: defaultdict(list))
+
+    thresholds_accumulator = defaultdict(list)
+    
+    # Listy do zbierania "globalnych" wyników (do wykresów zbiorczych)
+    y_true_global = []
+    test_errors_global = []
+
+    possible_percentiles = [60, 65, 70, 75, 80, 85, 90, 95, 96, 97, 98, 99]
+
+    # PĘTLA WALIDACJI KRZYŻOWEJ
+    for fold_i, (train_idx, test_idx) in enumerate(skf.split(X_all, y_all)):
+        print(f"\n=== FOLD {fold_i + 1}/{n_splits} ===")
+
+        X_train_raw = X_all.iloc[train_idx]
+        y_train_raw = y_all.iloc[train_idx]
+        
+        X_test_fold = X_all.iloc[test_idx]
+        y_test_fold = y_all.iloc[test_idx]
+
+        # Do treningu bierzemy tylko normę
+        train_mask_normal = (y_train_raw == 0)
+        X_train_normal = X_train_raw[train_mask_normal]
+
+        # Skalowanie
+        scaler = RobustScaler()
+        X_train_scaled = scaler.fit_transform(X_train_normal.values)
+        X_test_scaled = scaler.transform(X_test_fold.values)
+
+        train_tensor = torch.FloatTensor(X_train_scaled) # Tylko norma
+        test_tensor = torch.FloatTensor(X_test_scaled)   # Mix (Norma + Atak)
+
+        train_loader = DataLoader(TensorDataset(train_tensor, train_tensor), batch_size=128, shuffle=True)
+
+        # Nowy model
+        input_dim = X_train_normal.shape[1]
+        model = NetworkAutoencoder(input_dim)
+        optimizer = optim.Adam(model.parameters(), lr=0.0001)
+        criterion = nn.MSELoss()
+
+        # Trening   
+        epochs = 5
+        for epoch in range(epochs):
+            model.train()
+            train_loss = 0.0
+            for data, target in train_loader:
+                optimizer.zero_grad()
+                output = model(data)
+                loss = criterion(output, target)
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item() 
+
+            print(f"Epoch {epoch + 1}/{epochs}, Loss: {train_loss / len(train_loader):.6f}")
+        
+        model.eval()
+        with torch.no_grad():
+            # Rekonstrukcja zbioru treningowego (ustalenie progu "co jest normą")
+            train_recon = model(train_tensor)
+            train_errors = torch.mean((train_tensor - train_recon)**2, dim=1).numpy()
+            
+            # Rekonstrukcja zbioru testowego (weryfikacja)
+            test_recon = model(test_tensor)
+            test_errors = torch.mean((test_tensor - test_recon)**2, dim=1).numpy()
+            
+            # Zbieramy wyniki "globalne" do późniejszego wykresu ROC
+            y_true_global.extend(y_test_fold.values)
+            test_errors_global.extend(test_errors)
+
+            # Sprawdzanie percentyli
+            for p in possible_percentiles:
+                # Próg wyznaczamy na podstawie błędu treningowego tego konkretnego modelu
+                threshold = np.percentile(train_errors, p)
+
+                thresholds_accumulator[p].append(threshold)
+                
+                y_pred = (test_errors > threshold).astype(int)
+                
+                tp = ((y_pred == 1) & (y_test_fold == 1)).sum()
+                fp = ((y_pred == 1) & (y_test_fold == 0)).sum()
+                fn = ((y_pred == 0) & (y_test_fold == 1)).sum()
+                
+                recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+                precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+                f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+                
+                results_accumulator[p]['recall'].append(recall)
+                results_accumulator[p]['precision'].append(precision)
+                results_accumulator[p]['f1'].append(f1)
+                results_accumulator[p]['fp'].append(fp)
+                results_accumulator[p]['tp'].append(tp)
+
+    # Wyniki
+    print("\n" + "="*105)
+    print(f"WYNIKI WALIDACJI KRZYŻOWEJ (K={n_splits}) - ŚREDNIE")
+    print("="*105)
+    print(f"{'Percentyl':<10} | {'Avg Recall':<12} | {'Avg Precision':<15} | {'Avg F1 (+/- std)':<20} | {'Avg FP':<10}")
+    print("-" * 105)
+
+    best_f1_avg = 0
+    best_p = 0
+    avg_thresholds_map = {}
+
+    for p in possible_percentiles:
+        avg_thresh = np.mean(thresholds_accumulator[p])
+        avg_thresholds_map[p] = avg_thresh
+
+        stats = results_accumulator[p]
+        
+        avg_rec = np.mean(stats['recall'])
+        avg_prec = np.mean(stats['precision'])
+        avg_f1 = np.mean(stats['f1'])
+        std_f1 = np.std(stats['f1'])
+        avg_fp = np.mean(stats['fp'])
+        
+        print(f"{p:<10} | {avg_rec*100:6.2f}%      | {avg_prec*100:6.2f}%         | {avg_f1:.4f} (+/- {std_f1:.3f}) | {avg_fp:<10.1f}")
+        
+        if avg_f1 > best_f1_avg:
+            best_f1_avg = avg_f1
+            best_p = p
+
+    print("-" * 105)
+    print(f"Najlepszy średni percentyl: {best_p}")
+
+    # Generowanie wykresów
+    y_true_global = np.array(y_true_global)
+    test_errors_global = np.array(test_errors_global)
+    
+    plot_tradeoff_analysis(results_accumulator, possible_percentiles, file_tag=tag)
+    
+    plot_roc_curve(y_true_global, test_errors_global, file_tag=tag)
+    
+    plot_error_histogram(y_true_global, test_errors_global, threshold=avg_thresholds_map[best_p], file_tag=tag)
+
+    save_results_to_csv(results_accumulator, avg_thresholds_map, file_tag=tag)
+
+
 if __name__ == "__main__":
-    make_tests(load_dataset1, tag="kdd99", save_results=True)
-    make_tests(load_dataset2, tag="netflowv9", save_results=True)
-    make_tests(load_dataset3, tag="coresiot", save_results=True)
+    #make_tests(load_dataset1, tag="kdd99", save_results=True)
+    #make_tests(load_dataset2, tag="netflowv9", save_results=True)
+    #make_tests(load_dataset3, tag="coresiot", save_results=True)
+
+    run_cross_validation(load_dataset1_full, tag="kdd_CV", n_splits=5)
+    #run_cross_validation(load_dataset2_full, tag="netflow_CV", n_splits=5)
+    #run_cross_validation(load_dataset3_full, tag="coresiot_CV", n_splits=5)
