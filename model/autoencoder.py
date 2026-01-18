@@ -49,22 +49,23 @@ class NetworkAutoencoder(nn.Module):
         return decoded
 
 
-def make_tests(load_data: (), tag=""):
+def make_tests(load_data: (), tag="", save_results=False):
     print("--- Wczytywanie danych ---")
 
     (X_train_df, _), (X_test_df, y_test_series) = load_data()
 
-    # Wykres preprocessingu
-    plot_preprocessing_effect(X_train_df, feature_name="IN_BYTES", file_tag=tag)
+    if save_results:
+        # Wykres preprocessingu
+        plot_preprocessing_effect(X_train_df, feature_name="IN_BYTES", file_tag=tag)
 
-    # Wykres separowalności
-    plot_feature_separability(
-        X_test_df,
-        y_test_series.values,
-        feature_name="IN_PKTS",
-        apply_log=True,
-        file_tag=tag,
-    )
+        # Wykres separowalności
+        plot_feature_separability(
+            X_test_df,
+            y_test_series.values,
+            feature_name="IN_PKTS",
+            apply_log=True,
+            file_tag=tag,
+        )
 
     print(f"Dane treningowe (Norma): {X_train_df.shape}")
     print(f"Dane testowe (Mix): {X_test_df.shape}")
@@ -220,23 +221,24 @@ def make_tests(load_data: (), tag=""):
     print("-" * 105)
     print(f"Matematycznie najlepszy percentyl (wg średniego F1-Score): {best_p}")
 
-    # Wykres recall vs precision
-    plot_tradeoff_analysis(results_accumulator, possible_percentiles, file_tag=tag)
+    if save_results:
+        # Wykres recall vs precision
+        plot_tradeoff_analysis(results_accumulator, possible_percentiles, file_tag=tag)
 
-    # Wykres ROC
-    plot_roc_curve(y_true_full, test_errors_full, file_tag=tag)
+        # Wykres ROC
+        plot_roc_curve(y_true_full, test_errors_full, file_tag=tag)
 
-    # Histogram
-    best_threshold = thresholds_map[best_p]
-    plot_error_histogram(
-        y_true_full, test_errors_full, threshold=best_threshold, file_tag=tag
-    )
+        # Histogram
+        best_threshold = thresholds_map[best_p]
+        plot_error_histogram(
+            y_true_full, test_errors_full, threshold=best_threshold, file_tag=tag
+        )
 
-    # Zapis wyników do pliku
-    save_results_to_csv(results_accumulator, thresholds_map, file_tag=tag)
+        # Zapis wyników do pliku
+        save_results_to_csv(results_accumulator, thresholds_map, file_tag=tag)
 
 
 if __name__ == "__main__":
-    make_tests(load_dataset1, tag="kdd99")
-    make_tests(load_dataset2, tag="netflowv9")
-    make_tests(load_dataset3, tag="coresiot")
+    make_tests(load_dataset1, tag="kdd99", save_results=True)
+    make_tests(load_dataset2, tag="netflowv9", save_results=True)
+    make_tests(load_dataset3, tag="coresiot", save_results=True)
