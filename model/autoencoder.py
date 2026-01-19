@@ -396,6 +396,6 @@ if __name__ == "__main__":
     #make_tests(load_dataset2, tag="netflowv9", save_results=True)
     #make_tests(load_dataset3, tag="coresiot", save_results=True)
 
-    run_cross_validation(load_dataset1_full, tag="kdd_CV", n_splits=5)
-    #run_cross_validation(load_dataset2_full, tag="netflow_CV", n_splits=5)
-    #run_cross_validation(load_dataset3_full, tag="coresiot_CV", n_splits=5)
+    #run_cross_validation(load_dataset1_full, tag="kdd", n_splits=5)
+    #run_cross_validation(load_dataset2_full, tag="netflow", n_splits=5)
+    run_cross_validation(load_dataset3_full, tag="coresiot", n_splits=5)

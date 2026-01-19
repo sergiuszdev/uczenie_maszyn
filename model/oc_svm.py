@@ -172,7 +172,7 @@ def run_ocsvm_cross_validation(data_loader_func, tag="ocsvm_cv", n_splits=5):
         return
 
     # Konfiguracja K-Fold
-    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=get_random_seed())
 
     results_accumulator = defaultdict(lambda: defaultdict(list))
     thresholds_accumulator = defaultdict(list)
@@ -288,6 +288,6 @@ if __name__ == "__main__":
     #make_tests_ocsvm(load_dataset2, tag="netflowv9", save_results=True)
     #make_tests_ocsvm(load_dataset3, tag="coresiot", save_results=True)
 
-    run_ocsvm_cross_validation(load_dataset1_full, tag="kdd_CV", n_splits=5)
-    #run_ocsvm_cross_validation(load_dataset2_full, tag="netflow_CV", n_splits=5)
-    #run_ocsvm_cross_validation(load_dataset3_full, tag="coresiot_CV", n_splits=5)
+    #run_ocsvm_cross_validation(load_dataset1_full, tag="kdd", n_splits=5)
+    #run_ocsvm_cross_validation(load_dataset2_full, tag="netflow", n_splits=5)
+    run_ocsvm_cross_validation(load_dataset3_full, tag="coresiot", n_splits=5)
